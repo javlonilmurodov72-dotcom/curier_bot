@@ -11,16 +11,18 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from groq import Groq
 from openai import OpenAI
+from aiohttp import web
 
 # ==========================================
-# API KALITLAR VA ADMIN SOZLAMALARI
+# API KALITLAR VA ADMIN SOZLAMALARI (RENDER ENV)
 # ==========================================
-BOT_TOKEN = "BOT_TOKENINI_SHUYERGA_YOZING"
-GROQ_API_KEY = "gsk_GROQ_API_KEYINGIZNI_SHUYERGA_YOZING"
-OPENROUTER_API_KEY = "OPENROUTER_API_KEY_SHUYERGA"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
-# ADMIN TELEGRAM ID RAQAMLARI
-ADMIN_IDS = [123456789] 
+# ADMIN TELEGRAM ID RAQAMLARI (Masalan: "123456789,987654321")
+ADMIN_IDS_RAW = os.environ.get("ADMIN_ID", "123456789")
+ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS_RAW.split(",") if x.strip().isdigit()]
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 qwen_client = OpenAI(
@@ -30,6 +32,22 @@ qwen_client = OpenAI(
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# ------------------------------------------
+# Render Web Service Port Binding (Dummy Server)
+# ------------------------------------------
+async def handle_ping(request):
+    return web.Response(text="Bot is running smoothly 24/7!")
+
+async def start_dummy_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Soxta veb-server port {port} da ishga tushdi.")
 
 # ------------------------------------------
 # 1. Soat 04:00 chegara va 3 kunlik tozalash
@@ -71,7 +89,6 @@ async def start_handler(message: types.Message):
     )
     await message.answer(welcome_text, parse_mode="Markdown")
 
-# /excel buyrug'i - Sanalar ro'yxatini tugma ko'rinishida chiqaradi
 @dp.message(Command("excel"))
 async def send_excel_report_menu(message: types.Message):
     if message.from_user.id not in ADMIN_IDS:
@@ -79,15 +96,12 @@ async def send_excel_report_menu(message: types.Message):
         return
 
     auto_clean_old_excel_files()
-
-    # Mavjud barcha Excel fayllarni izlaymiz
     files = sorted(glob.glob("report_*.xlsx"), reverse=True)
 
     if not files:
         await message.answer("⚠️ Hali hech qanday hisobot fayllari mavjud emas.")
         return
 
-    # Har bir sana uchun tugma yaratamiz
     keyboard_buttons = []
     for file_path in files:
         date_str = file_path.replace("report_", "").replace(".xlsx", "")
@@ -100,7 +114,6 @@ async def send_excel_report_menu(message: types.Message):
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     await message.answer("📊 **Qaysi sanadagi Excel hisobotni yuklab olmoqchisiz?**", reply_markup=reply_markup, parse_mode="Markdown")
 
-# Tugma bosilganda faylni yuboruvchi Callback Handler
 @dp.callback_query(F.data.startswith("download_"))
 async def handle_excel_download(callback: types.CallbackQuery):
     if callback.from_user.id not in ADMIN_IDS:
@@ -186,13 +199,11 @@ def write_to_smena_excel(car_number: str, is_departure: bool, location_name: str
     work_date_str = get_working_date().strftime("%Y-%m-%d")
     time_str = now.strftime("%H:%M")
 
-    # Smenani aniqlash (14:00 gacha 1-Smena, so'ng 2-Smena)
     if 4 <= now.hour < 14:
         smena_name = "1-Smena (Kunduzgi)"
     else:
         smena_name = "2-Smena (Kechki)"
 
-    # Mashina va Smena mos qatorni qidirish
     target_row = None
     for row in range(2, ws.max_row + 1):
         cell_smena = str(ws.cell(row=row, column=2).value or "")
@@ -267,6 +278,9 @@ async def handle_video_note(message: types.Message):
 
 async def main():
     print("Mavjud kunlik Excel fayllarni tanlab yuklovchi Bot ishga tushdi...")
+    # Render portini faollashtirish
+    await start_dummy_web_server()
+    # Bot polling
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
