@@ -438,3 +438,4 @@ zipp==3.23.0
 zopfli==0.4.1
 zstandard==0.25.0
 zstd==1.5.7.3
+setuptools
